@@ -1,0 +1,465 @@
+import streamlit as st
+import json
+from datetime import datetime
+import random
+
+# Page configuration
+st.set_page_config(
+    page_title="Insurance Brokerage CoPilot",
+    page_icon="🛡️",
+    layout="wide"
+)
+
+# Initialize session state
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+if 'customer_profile' not in st.session_state:
+    st.session_state.customer_profile = {}
+if 'selected_language' not in st.session_state:
+    st.session_state.selected_language = 'English'
+
+# Sample data for demonstration
+RISK_PROFILES = {
+    'low': {
+        'description': 'Minimal risk exposure, stable income, no major health issues',
+        'products': ['Term Life Insurance', 'Basic Health Insurance', 'Home Insurance']
+    },
+    'medium': {
+        'description': 'Moderate risk exposure, regular income, some health considerations',
+        'products': ['Whole Life Insurance', 'Comprehensive Health Insurance', 'Auto Insurance', 'Travel Insurance']
+    },
+    'high': {
+        'description': 'Significant risk exposure, variable income, pre-existing conditions',
+        'products': ['Critical Illness Insurance', 'Premium Health Insurance', 'Disability Insurance', 'Long-term Care Insurance']
+    }
+}
+
+PRODUCTS_DATABASE = {
+    'Term Life Insurance': {
+        'premium': '$50-150/month',
+        'coverage': 'Up to $1M',
+        'features': ['Affordable premiums', 'Fixed term coverage', 'No cash value']
+    },
+    'Whole Life Insurance': {
+        'premium': '$150-500/month',
+        'coverage': 'Lifetime coverage',
+        'features': ['Cash value accumulation', 'Fixed premiums', 'Dividend potential']
+    },
+    'Basic Health Insurance': {
+        'premium': '$200-400/month',
+        'coverage': 'Standard medical expenses',
+        'features': ['Hospitalization', 'Outpatient care', 'Generic drugs']
+    },
+    'Comprehensive Health Insurance': {
+        'premium': '$400-800/month',
+        'coverage': 'Extensive medical coverage',
+        'features': ['Specialist visits', 'Brand-name drugs', 'Mental health coverage']
+    },
+    'Critical Illness Insurance': {
+        'premium': '$100-300/month',
+        'coverage': 'Lump sum on diagnosis',
+        'features': ['Cancer coverage', 'Heart attack/stroke', 'Major organ failure']
+    },
+    'Disability Insurance': {
+        'premium': '$80-250/month',
+        'coverage': '60-80% income replacement',
+        'features': ['Short-term disability', 'Long-term disability', 'Rehabilitation support']
+    }
+}
+
+TRANSLATIONS = {
+    'English': {
+        'greeting': 'Hello! How can I assist you today?',
+        'customer_info': 'Customer Information',
+        'risk_analysis': 'Risk Profile Analysis',
+        'product_recommendations': 'Product Recommendations',
+        'sales_collateral': 'Personalized Sales Collateral'
+    },
+    'Spanish': {
+        'greeting': '¡Hola! ¿Cómo puedo ayudarte hoy?',
+        'customer_info': 'Información del Cliente',
+        'risk_analysis': 'Análisis de Perfil de Riesgo',
+        'product_recommendations': 'Recomendaciones de Productos',
+        'sales_collateral': 'Material de Ventas Personalizado'
+    },
+    'French': {
+        'greeting': 'Bonjour! Comment puis-je vous aider aujourd\'hui?',
+        'customer_info': 'Informations Client',
+        'risk_analysis': 'Analyse du Profil de Risque',
+        'product_recommendations': 'Recommandations de Produits',
+        'sales_collateral': 'Documentation Commerciale Personnalisée'
+    }
+}
+
+def translate(key):
+    return TRANSLATIONS[st.session_state.selected_language].get(key, key)
+
+def assess_risk_profile(age, health_status, occupation, income_level):
+    """Simple risk assessment logic"""
+    risk_score = 0
+    
+    # Age factor
+    if age < 30:
+        risk_score += 1
+    elif age < 50:
+        risk_score += 2
+    else:
+        risk_score += 3
+    
+    # Health factor
+    if health_status == 'Excellent':
+        risk_score += 1
+    elif health_status == 'Good':
+        risk_score += 2
+    elif health_status == 'Fair':
+        risk_score += 3
+    else:
+        risk_score += 4
+    
+    # Occupation factor
+    if occupation in ['Desk Job', 'Professional']:
+        risk_score += 1
+    elif occupation in ['Sales', 'Healthcare']:
+        risk_score += 2
+    else:
+        risk_score += 3
+    
+    # Determine risk level
+    if risk_score <= 4:
+        return 'low'
+    elif risk_score <= 7:
+        return 'medium'
+    else:
+        return 'high'
+
+def generate_sales_collateral(customer_name, risk_level, recommended_products):
+    """Generate personalized sales document"""
+    return f"""
+# Personalized Insurance Proposal
+## For: {customer_name}
+### Date: {datetime.now().strftime('%B %d, %Y')}
+
+---
+
+### Risk Profile Assessment
+**Risk Level:** {risk_level.upper()}
+
+{RISK_PROFILES[risk_level]['description']}
+
+---
+
+### Recommended Products
+
+"""
+
+# Header
+st.title("🛡️ Insurance Brokerage CoPilot Assistant")
+st.markdown("*Powered by AI - TCS AI Fridays Hackathon*")
+
+# Sidebar
+with st.sidebar:
+    st.header("⚙️ Settings")
+    st.session_state.selected_language = st.selectbox(
+        "Language / Idioma / Langue",
+        ['English', 'Spanish', 'French']
+    )
+    
+    st.markdown("---")
+    st.header("📊 Agent Dashboard")
+    st.metric("Active Customers", random.randint(10, 50))
+    st.metric("Proposals Generated", random.randint(5, 25))
+    st.metric("Conversion Rate", f"{random.randint(15, 35)}%")
+    
+    st.markdown("---")
+    if st.button("🔄 Reset Session"):
+        st.session_state.chat_history = []
+        st.session_state.customer_profile = {}
+        st.rerun()
+
+# Main layout with tabs
+tab1, tab2, tab3, tab4 = st.tabs([
+    "💬 " + translate('greeting').split('!')[0],
+    "👤 " + translate('customer_info'),
+    "📈 " + translate('risk_analysis'),
+    "📄 " + translate('sales_collateral')
+])
+
+# Tab 1: Conversational Chatbot
+with tab1:
+    st.header("Multi-lingual Conversational Assistant")
+    
+    # Chat interface
+    chat_container = st.container()
+    
+    with chat_container:
+        for message in st.session_state.chat_history:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+    
+    # Knowledge base queries
+    with st.expander("📚 Quick Knowledge Base Queries"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("What is term life insurance?"):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "What is term life insurance?"
+                })
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": "Term life insurance provides coverage for a specific period (term), typically 10-30 years. It offers affordable premiums and straightforward death benefits but doesn't build cash value."
+                })
+                st.rerun()
+        
+        with col2:
+            if st.button("How does health insurance work?"):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "How does health insurance work?"
+                })
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": "Health insurance covers medical expenses by paying premiums regularly. You pay deductibles and copays when receiving care, and the insurance covers the remaining eligible costs according to your plan."
+                })
+                st.rerun()
+        
+        with col3:
+            if st.button("What is a risk profile?"):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "What is a risk profile?"
+                })
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": "A risk profile assesses factors like age, health, occupation, and lifestyle to determine appropriate insurance coverage and pricing. It helps match customers with suitable products."
+                })
+                st.rerun()
+    
+    # Chat input
+    user_input = st.chat_input("Ask a question or describe customer needs...")
+    
+    if user_input:
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        
+        # Simple response logic
+        response = f"I understand you're asking about: '{user_input}'. Let me help you with that. Based on our knowledge base, I can provide information about insurance products, risk assessment, and create personalized proposals for your customers."
+        
+        st.session_state.chat_history.append({"role": "assistant", "content": response})
+        st.rerun()
+
+# Tab 2: Customer Profile
+with tab2:
+    st.header("Dynamic Customer Profile Builder")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        customer_name = st.text_input("Customer Name", value=st.session_state.customer_profile.get('name', ''))
+        age = st.number_input("Age", min_value=18, max_value=100, value=st.session_state.customer_profile.get('age', 30))
+        email = st.text_input("Email", value=st.session_state.customer_profile.get('email', ''))
+        phone = st.text_input("Phone", value=st.session_state.customer_profile.get('phone', ''))
+    
+    with col2:
+        health_status = st.selectbox(
+            "Health Status",
+            ['Excellent', 'Good', 'Fair', 'Poor'],
+            index=['Excellent', 'Good', 'Fair', 'Poor'].index(st.session_state.customer_profile.get('health_status', 'Good'))
+        )
+        occupation = st.selectbox(
+            "Occupation Type",
+            ['Desk Job', 'Professional', 'Sales', 'Healthcare', 'Manual Labor', 'Other'],
+            index=0
+        )
+        income_level = st.selectbox(
+            "Income Level",
+            ['Under $50k', '$50k-$100k', '$100k-$200k', 'Over $200k'],
+            index=1
+        )
+        family_size = st.number_input("Family Size", min_value=1, max_value=10, value=st.session_state.customer_profile.get('family_size', 1))
+    
+    st.markdown("### Social Media & Behavioral Insights")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        lifestyle = st.multiselect(
+            "Lifestyle Indicators",
+            ['Active', 'Traveler', 'Home Owner', 'Business Owner', 'Smoker', 'Sports Enthusiast']
+        )
+    with col2:
+        interests = st.multiselect(
+            "Interests",
+            ['Health & Wellness', 'Financial Planning', 'Family Protection', 'Investment', 'Retirement']
+        )
+    with col3:
+        concerns = st.multiselect(
+            "Primary Concerns",
+            ['Medical Expenses', 'Income Loss', 'Family Security', 'Debt Protection', 'Estate Planning']
+        )
+    
+    if st.button("💾 Save Customer Profile", type="primary"):
+        st.session_state.customer_profile = {
+            'name': customer_name,
+            'age': age,
+            'email': email,
+            'phone': phone,
+            'health_status': health_status,
+            'occupation': occupation,
+            'income_level': income_level,
+            'family_size': family_size,
+            'lifestyle': lifestyle,
+            'interests': interests,
+            'concerns': concerns
+        }
+        st.success("✅ Customer profile saved successfully!")
+
+# Tab 3: Risk Analysis & Recommendations
+with tab3:
+    st.header("AI-Powered Risk Assessment & Product Recommendations")
+    
+    if st.session_state.customer_profile:
+        profile = st.session_state.customer_profile
+        
+        # Calculate risk profile
+        risk_level = assess_risk_profile(
+            profile.get('age', 30),
+            profile.get('health_status', 'Good'),
+            profile.get('occupation', 'Desk Job'),
+            profile.get('income_level', '$50k-$100k')
+        )
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            st.markdown("### Risk Profile")
+            if risk_level == 'low':
+                st.success(f"**Risk Level:** {risk_level.upper()}")
+                st.progress(0.33)
+            elif risk_level == 'medium':
+                st.warning(f"**Risk Level:** {risk_level.upper()}")
+                st.progress(0.66)
+            else:
+                st.error(f"**Risk Level:** {risk_level.upper()}")
+                st.progress(1.0)
+            
+            st.info(RISK_PROFILES[risk_level]['description'])
+        
+        with col2:
+            st.markdown("### Profile Summary")
+            st.write(f"**Name:** {profile.get('name', 'N/A')}")
+            st.write(f"**Age:** {profile.get('age', 'N/A')}")
+            st.write(f"**Health:** {profile.get('health_status', 'N/A')}")
+            st.write(f"**Occupation:** {profile.get('occupation', 'N/A')}")
+            st.write(f"**Income:** {profile.get('income_level', 'N/A')}")
+            st.write(f"**Family Size:** {profile.get('family_size', 'N/A')}")
+        
+        st.markdown("---")
+        st.markdown("### 🎯 Recommended Products")
+        
+        recommended_products = RISK_PROFILES[risk_level]['products']
+        
+        # Display products in cards
+        cols = st.columns(min(len(recommended_products), 3))
+        for idx, product in enumerate(recommended_products):
+            with cols[idx % 3]:
+                with st.container():
+                    st.markdown(f"#### {product}")
+                    if product in PRODUCTS_DATABASE:
+                        details = PRODUCTS_DATABASE[product]
+                        st.write(f"**Premium:** {details['premium']}")
+                        st.write(f"**Coverage:** {details['coverage']}")
+                        with st.expander("View Features"):
+                            for feature in details['features']:
+                                st.write(f"• {feature}")
+                    
+                    if st.button(f"Select {product}", key=f"select_{idx}"):
+                        st.success(f"✅ {product} added to proposal!")
+    else:
+        st.info("👈 Please complete the customer profile in the 'Customer Information' tab first.")
+
+# Tab 4: Sales Collateral
+with tab4:
+    st.header("Personalized Sales Collateral Generator")
+    
+    if st.session_state.customer_profile:
+        profile = st.session_state.customer_profile
+        risk_level = assess_risk_profile(
+            profile.get('age', 30),
+            profile.get('health_status', 'Good'),
+            profile.get('occupation', 'Desk Job'),
+            profile.get('income_level', '$50k-$100k')
+        )
+        recommended_products = RISK_PROFILES[risk_level]['products']
+        
+        st.markdown("### Preview")
+        
+        # Generate collateral
+        collateral = generate_sales_collateral(
+            profile.get('name', 'Valued Customer'),
+            risk_level,
+            recommended_products
+        )
+        
+        for product in recommended_products:
+            if product in PRODUCTS_DATABASE:
+                details = PRODUCTS_DATABASE[product]
+                collateral += f"#### {product}\n"
+                collateral += f"- **Premium Range:** {details['premium']}\n"
+                collateral += f"- **Coverage:** {details['coverage']}\n"
+                collateral += f"- **Key Features:**\n"
+                for feature in details['features']:
+                    collateral += f"  - {feature}\n"
+                collateral += "\n"
+        
+        collateral += f"""
+---
+
+### Why These Products?
+
+Based on your **{risk_level} risk profile**, we've selected products that provide optimal coverage while remaining cost-effective. These recommendations consider your age ({profile.get('age')}), health status ({profile.get('health_status')}), and family needs.
+
+### Next Steps
+
+1. Review the recommended products
+2. Schedule a detailed consultation
+3. Complete the application process
+4. Activate your coverage
+
+---
+
+**Contact Your Agent:**
+📧 {profile.get('email', 'agent@insurance.com')}
+📱 {profile.get('phone', '(555) 123-4567')}
+
+*This proposal is valid for 30 days from the date of generation.*
+"""
+        
+        st.markdown(collateral)
+        
+        st.markdown("---")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.download_button(
+                label="📥 Download as PDF",
+                data=collateral,
+                file_name=f"proposal_{profile.get('name', 'customer').replace(' ', '_')}.txt",
+                mime="text/plain"
+            )
+        with col2:
+            if st.button("📧 Email to Customer"):
+                st.success(f"✅ Proposal sent to {profile.get('email', 'customer email')}")
+        with col3:
+            if st.button("🖨️ Print Proposal"):
+                st.info("Opening print dialog...")
+    else:
+        st.info("👈 Please complete the customer profile and risk analysis first.")
+
+# Footer
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center; color: #666;'>
+        <p>🛡️ Insurance Brokerage CoPilot | TCS AI Fridays Hackathon 2025</p>
+        <p style='font-size: 0.8em;'>Empowering brokers with AI-driven insights and personalized customer experiences</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
