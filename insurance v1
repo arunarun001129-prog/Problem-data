@@ -1,0 +1,682 @@
+import streamlit as st
+import json
+from datetime import datetime
+import random
+import anthropic
+import os
+
+# Page configuration
+st.set_page_config(
+    page_title="Insurance Brokerage CoPilot",
+    page_icon="🛡️",
+    layout="wide"
+)
+
+# Initialize session state
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+if 'customer_profile' not in st.session_state:
+    st.session_state.customer_profile = {}
+if 'selected_language' not in st.session_state:
+    st.session_state.selected_language = 'English'
+if 'claude_messages' not in st.session_state:
+    st.session_state.claude_messages = []
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = ''
+
+# Sample data for demonstration
+RISK_PROFILES = {
+    'low': {
+        'description': 'Minimal risk exposure, stable income, no major health issues',
+        'products': ['Term Life Insurance', 'Basic Health Insurance', 'Home Insurance']
+    },
+    'medium': {
+        'description': 'Moderate risk exposure, regular income, some health considerations',
+        'products': ['Whole Life Insurance', 'Comprehensive Health Insurance', 'Auto Insurance', 'Travel Insurance']
+    },
+    'high': {
+        'description': 'Significant risk exposure, variable income, pre-existing conditions',
+        'products': ['Critical Illness Insurance', 'Premium Health Insurance', 'Disability Insurance', 'Long-term Care Insurance']
+    }
+}
+
+PRODUCTS_DATABASE = {
+    'Term Life Insurance': {
+        'premium': '$50-150/month',
+        'coverage': 'Up to $1M',
+        'features': ['Affordable premiums', 'Fixed term coverage', 'No cash value']
+    },
+    'Whole Life Insurance': {
+        'premium': '$150-500/month',
+        'coverage': 'Lifetime coverage',
+        'features': ['Cash value accumulation', 'Fixed premiums', 'Dividend potential']
+    },
+    'Basic Health Insurance': {
+        'premium': '$200-400/month',
+        'coverage': 'Standard medical expenses',
+        'features': ['Hospitalization', 'Outpatient care', 'Generic drugs']
+    },
+    'Comprehensive Health Insurance': {
+        'premium': '$400-800/month',
+        'coverage': 'Extensive medical coverage',
+        'features': ['Specialist visits', 'Brand-name drugs', 'Mental health coverage']
+    },
+    'Critical Illness Insurance': {
+        'premium': '$100-300/month',
+        'coverage': 'Lump sum on diagnosis',
+        'features': ['Cancer coverage', 'Heart attack/stroke', 'Major organ failure']
+    },
+    'Disability Insurance': {
+        'premium': '$80-250/month',
+        'coverage': '60-80% income replacement',
+        'features': ['Short-term disability', 'Long-term disability', 'Rehabilitation support']
+    },
+    'Home Insurance': {
+        'premium': '$100-300/month',
+        'coverage': 'Property and liability',
+        'features': ['Property damage', 'Theft protection', 'Liability coverage']
+    },
+    'Auto Insurance': {
+        'premium': '$100-250/month',
+        'coverage': 'Vehicle and liability',
+        'features': ['Collision coverage', 'Comprehensive', 'Liability protection']
+    },
+    'Travel Insurance': {
+        'premium': '$50-150/trip',
+        'coverage': 'Travel-related risks',
+        'features': ['Trip cancellation', 'Medical emergency', 'Lost baggage']
+    },
+    'Long-term Care Insurance': {
+        'premium': '$200-500/month',
+        'coverage': 'Long-term care services',
+        'features': ['Nursing home care', 'Home health care', 'Assisted living']
+    }
+}
+
+TRANSLATIONS = {
+    'English': {
+        'greeting': 'Hello! How can I assist you today?',
+        'customer_info': 'Customer Information',
+        'risk_analysis': 'Risk Profile Analysis',
+        'product_recommendations': 'Product Recommendations',
+        'sales_collateral': 'Personalized Sales Collateral'
+    },
+    'Spanish': {
+        'greeting': '¡Hola! ¿Cómo puedo ayudarte hoy?',
+        'customer_info': 'Información del Cliente',
+        'risk_analysis': 'Análisis de Perfil de Riesgo',
+        'product_recommendations': 'Recomendaciones de Productos',
+        'sales_collateral': 'Material de Ventas Personalizado'
+    },
+    'French': {
+        'greeting': 'Bonjour! Comment puis-je vous aider aujourd\'hui?',
+        'customer_info': 'Informations Client',
+        'risk_analysis': 'Analyse du Profil de Risque',
+        'product_recommendations': 'Recommandations de Produits',
+        'sales_collateral': 'Documentation Commerciale Personnalisée'
+    }
+}
+
+def translate(key):
+    return TRANSLATIONS[st.session_state.selected_language].get(key, key)
+
+def get_claude_client():
+    """Initialize Claude API client"""
+    api_key = st.session_state.api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    return anthropic.Anthropic(api_key=api_key)
+
+def chat_with_claude(user_message, context=""):
+    """Send message to Claude and get response"""
+    client = get_claude_client()
+    if not client:
+        return "Please configure your Anthropic API key in the sidebar to enable Claude AI."
+    
+    try:
+        # Add user message to Claude's conversation history
+        st.session_state.claude_messages.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        # Create system prompt with context
+        system_prompt = f"""You are an expert insurance broker assistant helping agents provide personalized insurance recommendations. 
+You have access to a knowledge base about insurance products and can help with:
+- Answering questions about different types of insurance
+- Explaining insurance terms and concepts
+- Providing guidance on risk assessment
+- Helping create personalized recommendations
+
+Available products: {', '.join(PRODUCTS_DATABASE.keys())}
+
+Language: {st.session_state.selected_language}
+
+{context}
+
+Be concise, professional, and helpful. Focus on practical advice for insurance brokers."""
+        
+        # Call Claude API
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1024,
+            system=system_prompt,
+            messages=st.session_state.claude_messages
+        )
+        
+        # Extract response text
+        assistant_message = response.content[0].text
+        
+        # Add assistant response to history
+        st.session_state.claude_messages.append({
+            "role": "assistant",
+            "content": assistant_message
+        })
+        
+        return assistant_message
+    
+    except Exception as e:
+        return f"Error communicating with Claude: {str(e)}"
+
+def assess_risk_with_claude(profile):
+    """Use Claude to assess risk profile"""
+    client = get_claude_client()
+    if not client:
+        # Fallback to rule-based assessment
+        return assess_risk_profile_fallback(
+            profile.get('age', 30),
+            profile.get('health_status', 'Good'),
+            profile.get('occupation', 'Desk Job'),
+            profile.get('income_level', '$50k-$100k')
+        )
+    
+    try:
+        prompt = f"""Analyze this customer profile and determine their insurance risk level (low, medium, or high):
+
+Customer Profile:
+- Age: {profile.get('age')}
+- Health Status: {profile.get('health_status')}
+- Occupation: {profile.get('occupation')}
+- Income Level: {profile.get('income_level')}
+- Family Size: {profile.get('family_size')}
+- Lifestyle: {', '.join(profile.get('lifestyle', []))}
+- Interests: {', '.join(profile.get('interests', []))}
+- Primary Concerns: {', '.join(profile.get('concerns', []))}
+
+Respond with ONLY one word: low, medium, or high"""
+        
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=50,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        risk_level = response.content[0].text.strip().lower()
+        if risk_level in ['low', 'medium', 'high']:
+            return risk_level
+        else:
+            return 'medium'  # Default fallback
+    
+    except Exception as e:
+        st.error(f"Claude API error: {str(e)}")
+        return assess_risk_profile_fallback(
+            profile.get('age', 30),
+            profile.get('health_status', 'Good'),
+            profile.get('occupation', 'Desk Job'),
+            profile.get('income_level', '$50k-$100k')
+        )
+
+def assess_risk_profile_fallback(age, health_status, occupation, income_level):
+    """Fallback risk assessment logic"""
+    risk_score = 0
+    
+    if age < 30:
+        risk_score += 1
+    elif age < 50:
+        risk_score += 2
+    else:
+        risk_score += 3
+    
+    if health_status == 'Excellent':
+        risk_score += 1
+    elif health_status == 'Good':
+        risk_score += 2
+    elif health_status == 'Fair':
+        risk_score += 3
+    else:
+        risk_score += 4
+    
+    if occupation in ['Desk Job', 'Professional']:
+        risk_score += 1
+    elif occupation in ['Sales', 'Healthcare']:
+        risk_score += 2
+    else:
+        risk_score += 3
+    
+    if risk_score <= 4:
+        return 'low'
+    elif risk_score <= 7:
+        return 'medium'
+    else:
+        return 'high'
+
+def generate_sales_collateral_with_claude(profile, risk_level, recommended_products):
+    """Generate personalized sales collateral using Claude"""
+    client = get_claude_client()
+    
+    if not client:
+        # Fallback to template-based generation
+        return generate_sales_collateral_fallback(profile.get('name', 'Valued Customer'), risk_level, recommended_products)
+    
+    try:
+        products_info = "\n".join([
+            f"- {product}: {PRODUCTS_DATABASE[product]['premium']}, Coverage: {PRODUCTS_DATABASE[product]['coverage']}"
+            for product in recommended_products if product in PRODUCTS_DATABASE
+        ])
+        
+        prompt = f"""Create a professional, personalized insurance proposal for the following customer:
+
+Customer Profile:
+- Name: {profile.get('name')}
+- Age: {profile.get('age')}
+- Health Status: {profile.get('health_status')}
+- Occupation: {profile.get('occupation')}
+- Income Level: {profile.get('income_level')}
+- Family Size: {profile.get('family_size')}
+- Risk Level: {risk_level.upper()}
+
+Recommended Products:
+{products_info}
+
+Create a compelling, personalized proposal that:
+1. Addresses the customer by name
+2. Explains why these products match their needs
+3. Highlights key benefits
+4. Includes a clear call-to-action
+5. Uses a professional yet warm tone
+
+Format the response in Markdown."""
+        
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        return response.content[0].text
+    
+    except Exception as e:
+        st.error(f"Claude API error: {str(e)}")
+        return generate_sales_collateral_fallback(profile.get('name', 'Valued Customer'), risk_level, recommended_products)
+
+def generate_sales_collateral_fallback(customer_name, risk_level, recommended_products):
+    """Fallback sales collateral generation"""
+    collateral = f"""
+# Personalized Insurance Proposal
+## For: {customer_name}
+### Date: {datetime.now().strftime('%B %d, %Y')}
+
+---
+
+### Risk Profile Assessment
+**Risk Level:** {risk_level.upper()}
+
+{RISK_PROFILES[risk_level]['description']}
+
+---
+
+### Recommended Products
+
+"""
+    for product in recommended_products:
+        if product in PRODUCTS_DATABASE:
+            details = PRODUCTS_DATABASE[product]
+            collateral += f"#### {product}\n"
+            collateral += f"- **Premium Range:** {details['premium']}\n"
+            collateral += f"- **Coverage:** {details['coverage']}\n"
+            collateral += f"- **Key Features:**\n"
+            for feature in details['features']:
+                collateral += f"  - {feature}\n"
+            collateral += "\n"
+    
+    return collateral
+
+# Header
+st.title("🛡️ Insurance Brokerage CoPilot Assistant")
+st.markdown("*Powered by Claude AI - TCS AI Fridays Hackathon*")
+
+# Sidebar
+with st.sidebar:
+    st.header("⚙️ Settings")
+    
+    # API Key Configuration
+    with st.expander("🔑 Claude API Configuration", expanded=not st.session_state.api_key):
+        api_key_input = st.text_input(
+            "Anthropic API Key",
+            type="password",
+            value=st.session_state.api_key,
+            help="Enter your Anthropic API key to enable Claude AI features"
+        )
+        if st.button("Save API Key"):
+            st.session_state.api_key = api_key_input
+            st.success("✅ API Key saved!")
+        
+        st.markdown("[Get API Key](https://console.anthropic.com/)")
+    
+    # Check API status
+    if get_claude_client():
+        st.success("✅ Claude AI: Connected")
+    else:
+        st.warning("⚠️ Claude AI: Not configured")
+    
+    st.session_state.selected_language = st.selectbox(
+        "Language / Idioma / Langue",
+        ['English', 'Spanish', 'French']
+    )
+    
+    st.markdown("---")
+    st.header("📊 Agent Dashboard")
+    st.metric("Active Customers", random.randint(10, 50))
+    st.metric("Proposals Generated", random.randint(5, 25))
+    st.metric("Conversion Rate", f"{random.randint(15, 35)}%")
+    
+    st.markdown("---")
+    if st.button("🔄 Reset Session"):
+        st.session_state.chat_history = []
+        st.session_state.customer_profile = {}
+        st.session_state.claude_messages = []
+        st.rerun()
+
+# Main layout with tabs
+tab1, tab2, tab3, tab4 = st.tabs([
+    "💬 AI Chat",
+    "👤 " + translate('customer_info'),
+    "📈 " + translate('risk_analysis'),
+    "📄 " + translate('sales_collateral')
+])
+
+# Tab 1: AI-Powered Conversational Chatbot
+with tab1:
+    st.header("AI-Powered Conversational Assistant (Claude)")
+    
+    # Display Claude connection status
+    if not get_claude_client():
+        st.info("👈 Configure your Anthropic API key in the sidebar to enable Claude AI features")
+    
+    # Chat interface
+    chat_container = st.container()
+    
+    with chat_container:
+        for message in st.session_state.chat_history:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+    
+    # Quick actions
+    with st.expander("📚 Quick Knowledge Base Queries"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("Explain term life insurance"):
+                user_msg = "Explain term life insurance in simple terms"
+                st.session_state.chat_history.append({"role": "user", "content": user_msg})
+                
+                response = chat_with_claude(user_msg)
+                st.session_state.chat_history.append({"role": "assistant", "content": response})
+                st.rerun()
+        
+        with col2:
+            if st.button("Compare health plans"):
+                user_msg = "Compare basic vs comprehensive health insurance"
+                st.session_state.chat_history.append({"role": "user", "content": user_msg})
+                
+                response = chat_with_claude(user_msg)
+                st.session_state.chat_history.append({"role": "assistant", "content": response})
+                st.rerun()
+        
+        with col3:
+            if st.button("Risk assessment tips"):
+                user_msg = "What factors should I consider when assessing a customer's insurance risk?"
+                st.session_state.chat_history.append({"role": "user", "content": user_msg})
+                
+                response = chat_with_claude(user_msg)
+                st.session_state.chat_history.append({"role": "assistant", "content": response})
+                st.rerun()
+    
+    # Customer context for AI
+    if st.session_state.customer_profile:
+        with st.expander("🎯 Ask about current customer"):
+            context_query = st.text_input("Ask Claude about the current customer profile")
+            if st.button("Ask with Context") and context_query:
+                profile_context = f"Current customer profile: {json.dumps(st.session_state.customer_profile, indent=2)}"
+                st.session_state.chat_history.append({"role": "user", "content": context_query})
+                
+                response = chat_with_claude(context_query, profile_context)
+                st.session_state.chat_history.append({"role": "assistant", "content": response})
+                st.rerun()
+    
+    # Chat input
+    user_input = st.chat_input("Ask Claude anything about insurance...")
+    
+    if user_input:
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        
+        # Get response from Claude
+        response = chat_with_claude(user_input)
+        st.session_state.chat_history.append({"role": "assistant", "content": response})
+        st.rerun()
+
+# Tab 2: Customer Profile
+with tab2:
+    st.header("Dynamic Customer Profile Builder")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        customer_name = st.text_input("Customer Name", value=st.session_state.customer_profile.get('name', ''))
+        age = st.number_input("Age", min_value=18, max_value=100, value=st.session_state.customer_profile.get('age', 30))
+        email = st.text_input("Email", value=st.session_state.customer_profile.get('email', ''))
+        phone = st.text_input("Phone", value=st.session_state.customer_profile.get('phone', ''))
+    
+    with col2:
+        health_status = st.selectbox(
+            "Health Status",
+            ['Excellent', 'Good', 'Fair', 'Poor'],
+            index=['Excellent', 'Good', 'Fair', 'Poor'].index(st.session_state.customer_profile.get('health_status', 'Good'))
+        )
+        occupation = st.selectbox(
+            "Occupation Type",
+            ['Desk Job', 'Professional', 'Sales', 'Healthcare', 'Manual Labor', 'Other'],
+            index=0
+        )
+        income_level = st.selectbox(
+            "Income Level",
+            ['Under $50k', '$50k-$100k', '$100k-$200k', 'Over $200k'],
+            index=1
+        )
+        family_size = st.number_input("Family Size", min_value=1, max_value=10, value=st.session_state.customer_profile.get('family_size', 1))
+    
+    st.markdown("### Social Media & Behavioral Insights")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        lifestyle = st.multiselect(
+            "Lifestyle Indicators",
+            ['Active', 'Traveler', 'Home Owner', 'Business Owner', 'Smoker', 'Sports Enthusiast'],
+            default=st.session_state.customer_profile.get('lifestyle', [])
+        )
+    with col2:
+        interests = st.multiselect(
+            "Interests",
+            ['Health & Wellness', 'Financial Planning', 'Family Protection', 'Investment', 'Retirement'],
+            default=st.session_state.customer_profile.get('interests', [])
+        )
+    with col3:
+        concerns = st.multiselect(
+            "Primary Concerns",
+            ['Medical Expenses', 'Income Loss', 'Family Security', 'Debt Protection', 'Estate Planning'],
+            default=st.session_state.customer_profile.get('concerns', [])
+        )
+    
+    if st.button("💾 Save Customer Profile", type="primary"):
+        st.session_state.customer_profile = {
+            'name': customer_name,
+            'age': age,
+            'email': email,
+            'phone': phone,
+            'health_status': health_status,
+            'occupation': occupation,
+            'income_level': income_level,
+            'family_size': family_size,
+            'lifestyle': lifestyle,
+            'interests': interests,
+            'concerns': concerns
+        }
+        st.success("✅ Customer profile saved successfully!")
+        
+        # Auto-generate AI insights
+        if get_claude_client():
+            with st.spinner("🤖 Claude is analyzing the customer profile..."):
+                insight_prompt = f"Provide 2-3 key insights about this customer profile for insurance planning: {json.dumps(st.session_state.customer_profile, indent=2)}"
+                insights = chat_with_claude(insight_prompt)
+                st.info(f"**AI Insights:**\n\n{insights}")
+
+# Tab 3: Risk Analysis & Recommendations
+with tab3:
+    st.header("AI-Powered Risk Assessment & Product Recommendations")
+    
+    if st.session_state.customer_profile:
+        profile = st.session_state.customer_profile
+        
+        # Use Claude for risk assessment
+        with st.spinner("🤖 Claude is analyzing risk profile..."):
+            risk_level = assess_risk_with_claude(profile)
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            st.markdown("### Risk Profile")
+            if risk_level == 'low':
+                st.success(f"**Risk Level:** {risk_level.upper()}")
+                st.progress(0.33)
+            elif risk_level == 'medium':
+                st.warning(f"**Risk Level:** {risk_level.upper()}")
+                st.progress(0.66)
+            else:
+                st.error(f"**Risk Level:** {risk_level.upper()}")
+                st.progress(1.0)
+            
+            st.info(RISK_PROFILES[risk_level]['description'])
+        
+        with col2:
+            st.markdown("### Profile Summary")
+            st.write(f"**Name:** {profile.get('name', 'N/A')}")
+            st.write(f"**Age:** {profile.get('age', 'N/A')}")
+            st.write(f"**Health:** {profile.get('health_status', 'N/A')}")
+            st.write(f"**Occupation:** {profile.get('occupation', 'N/A')}")
+            st.write(f"**Income:** {profile.get('income_level', 'N/A')}")
+            st.write(f"**Family Size:** {profile.get('family_size', 'N/A')}")
+        
+        st.markdown("---")
+        st.markdown("### 🎯 AI-Recommended Products")
+        
+        recommended_products = RISK_PROFILES[risk_level]['products']
+        
+        # Get AI explanation for recommendations
+        if get_claude_client():
+            with st.expander("🤖 Why these products? (Claude's Analysis)", expanded=True):
+                explanation_prompt = f"""Explain why these products are recommended for a customer with {risk_level} risk profile:
+Profile: Age {profile.get('age')}, {profile.get('health_status')} health, {profile.get('occupation')} occupation
+Products: {', '.join(recommended_products)}
+Keep it concise (2-3 sentences)."""
+                
+                with st.spinner("Generating explanation..."):
+                    explanation = chat_with_claude(explanation_prompt)
+                    st.write(explanation)
+        
+        # Display products in cards
+        cols = st.columns(min(len(recommended_products), 3))
+        for idx, product in enumerate(recommended_products):
+            with cols[idx % 3]:
+                with st.container():
+                    st.markdown(f"#### {product}")
+                    if product in PRODUCTS_DATABASE:
+                        details = PRODUCTS_DATABASE[product]
+                        st.write(f"**Premium:** {details['premium']}")
+                        st.write(f"**Coverage:** {details['coverage']}")
+                        with st.expander("View Features"):
+                            for feature in details['features']:
+                                st.write(f"• {feature}")
+                    
+                    if st.button(f"Select {product}", key=f"select_{idx}"):
+                        st.success(f"✅ {product} added to proposal!")
+    else:
+        st.info("👈 Please complete the customer profile in the 'Customer Information' tab first.")
+
+# Tab 4: AI-Generated Sales Collateral
+with tab4:
+    st.header("AI-Generated Personalized Sales Collateral")
+    
+    if st.session_state.customer_profile:
+        profile = st.session_state.customer_profile
+        risk_level = assess_risk_with_claude(profile) if get_claude_client() else assess_risk_profile_fallback(
+            profile.get('age', 30),
+            profile.get('health_status', 'Good'),
+            profile.get('occupation', 'Desk Job'),
+            profile.get('income_level', '$50k-$100k')
+        )
+        recommended_products = RISK_PROFILES[risk_level]['products']
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("### Preview")
+        with col2:
+            if st.button("🤖 Generate with Claude AI", type="primary"):
+                with st.spinner("Claude is creating your personalized proposal..."):
+                    collateral = generate_sales_collateral_with_claude(profile, risk_level, recommended_products)
+                    st.session_state['generated_collateral'] = collateral
+                    st.rerun()
+        
+        # Display generated collateral
+        if 'generated_collateral' in st.session_state:
+            collateral = st.session_state['generated_collateral']
+        else:
+            collateral = generate_sales_collateral_fallback(
+                profile.get('name', 'Valued Customer'),
+                risk_level,
+                recommended_products
+            )
+        
+        st.markdown(collateral)
+        
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.download_button(
+                label="📥 Download",
+                data=collateral,
+                file_name=f"proposal_{profile.get('name', 'customer').replace(' ', '_')}.md",
+                mime="text/markdown"
+            )
+        with col2:
+            if st.button("📧 Email to Customer"):
+                st.success(f"✅ Proposal sent to {profile.get('email', 'customer email')}")
+        with col3:
+            if st.button("🖨️ Print"):
+                st.info("Opening print dialog...")
+        with col4:
+            if st.button("🔄 Regenerate"):
+                if 'generated_collateral' in st.session_state:
+                    del st.session_state['generated_collateral']
+                st.rerun()
+    else:
+        st.info("👈 Please complete the customer profile and risk analysis first.")
+
+# Footer
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center; color: #666;'>
+        <p>🛡️ Insurance Brokerage CoPilot | Powered by Claude AI | TCS AI Fridays Hackathon 2025</p>
+        <p style='font-size: 0.8em;'>Empowering brokers with AI-driven insights and personalized customer experiences</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
